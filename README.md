@@ -3,7 +3,7 @@ This repository will be used for the creating the shiny app needed for project 2
 
 # Purpose of App
 Data of interest:
-https://api.websitecarbon.com/
+https://api.openbrewerydb.org/v1/breweries
 
 # Required Packages
 1. tidyverse

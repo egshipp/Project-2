@@ -149,6 +149,7 @@ ggplot(bin_counts, aes(x = calorie_bin, y = fruit_count, fill = calorie_bin)) +
 ui <- navbarPage(
   "Fruit Nutrition Explorer",
   
+  # About tab
   tabPanel(
     "About",
     fluidPage("About This App"),
@@ -158,6 +159,7 @@ ui <- navbarPage(
       tags$a(href="https://www.fruityvice.com/", "Fruityvice Website"))
   ),
   
+  # Data download tab
   tabPanel(
     "Data Download",
     sidebarLayout(
@@ -165,18 +167,117 @@ ui <- navbarPage(
         textInput("fruit_name", "Fruit Name (or leave blank for all):", value = ""),
         actionButton("get_data", "Fetch Data"),
         hr(),
-        uiOutput("columns_ui"),          # Dynamic UI for columns
-        uiOutput("rows_ui"),             # Dynamic UI for rows
+        uiOutput("columns_ui"),
+        uiOutput("rows_ui"),
         downloadButton("download_data", "Download CSV")
       ),
       mainPanel(
-        DT::dataTableOutput("table")
+        DT::dataTableOutput("table"),
+        p("Please make sure you fetch the data you will be using before proceding the Data Exploration tab")
       )
     )
   ),
-    
+
+  # Data exploration tab
+  tabPanel(
+    "Data Exploration",
+    sidebarLayout(
+      sidebarPanel(
+        selectInput("xvar", "X variable:", choices=NULL),    # dynamic
+        selectInput("yvar", "Y variable:", choices=NULL),    # dynamic
+        selectInput("facetvar", "Facet by:", choices=NULL),  # dynamic
+        radioButtons("plottype", "Plot Type:",
+                     choices=c("Scatterplot", "Boxplot", "Barplot"))
+      ),
+      mainPanel(
+        plotOutput("plot"),
+        verbatimTextOutput("summary")
+      )
+    )
+  )
 )
 
-server <- function(input, outpit, session){}
+
+server <- function(input, output, session){
+  # Data from API
+  fetched_data <- eventReactive(input$get_data, {
+    fruit_data <- function(fruit_name="all") {
+      base_url <- "https://www.fruityvice.com/api/fruit/"
+      url <- paste0(base_url, fruit_name)
+      raw <- httr::GET(url)
+      parsed <- jsonlite::fromJSON(rawToChar(raw$content), flatten = TRUE)
+      data <- tibble::as_tibble(parsed)
+      return(data)
+    }
+    
+    df <- fruit_data(ifelse(input$fruit_name=="", "all", input$fruit_name))
+    df$color <- c("Orange", "Red", "Brown", "Red", "Green", "Yellow", "Purple", "Red", "Brown", "Brown",
+                  "Yellow", "Purple", "Green", "Purple", "Purple", "Orange", "Green", "Red", "Green", "Yellow",
+                  "Green", "Blue", "Red", "Green", "Orange", "Brown", "Orange", "Red", "Green", "Red", "Red", "Purple",
+                  "Red", "Green", "Green", "Brown", "Red", "Red", "Orange", "Yellow", "Yellow", "Brown", "Yellow",
+                  "Purple", "Orange", "Orange", "Orange", "Green", "Red")[seq_len(nrow(df))]
+    df
+  })
+  output$table <- DT::renderDataTable({
+    req(fetched_data())
+    fetched_data()
+  })
+  
+  # Choosing columns and rows
+  output$columns_ui <- renderUI({
+    req(fetched_data())
+    checkboxGroupInput("columns", "Select Columns:", choices=names(fetched_data()), selected=names(fetched_data()))
+  })
+  
+  output$rows_ui <- renderUI({
+    req(fetched_data())
+    sliderInput("rows", "Rows to Display:", min=1, max=nrow(fetched_data()), value=c(1, nrow(fetched_data())))
+  })
+  
+  # Download the subset data into a csv
+  downloadHandler(
+    filename=function() { paste0("fruit_data_", Sys.Date(), ".csv") },
+    content=function(file) {
+      df <- fetched_data()[input$rows[1]:input$rows[2], input$columns, drop=FALSE]
+      write.csv(df, file, row.names=FALSE)
+    }
+  )
+  
+  # Choosing variables using a dropdown that will be observed only if new is chosen
+  observe({
+    req(fetched_data())
+    num_vars <- names(fetched_data() |> select(where(is.numeric)))
+    all_vars <- names(fetched_data())
+    updateSelectInput(session, "xvar", choices=all_vars)
+    updateSelectInput(session, "yvar", choices=num_vars)
+    updateSelectInput(session, "facetvar", choices=all_vars)
+  })
+  
+  # All summaries and outputs
+  output$summary <- renderPrint({
+    req(fetched_data())
+    df <- fetched_data()
+    if (!is.null(input$xvar) && input$xvar %in% names(df)) {
+      summary(df[[input$xvar]])
+    }
+  })
+  
+  output$plot <- renderPlot({
+    req(fetched_data(), input$xvar)
+    df <- fetched_data()
+    
+    p <- ggplot(df, aes_string(x=input$xvar))
+    
+    if (input$plottype == "Scatterplot" && input$yvar!="") {
+      p <- p + geom_point(aes_string(y=input$yvar, color=input$facetvar))
+    } else if (input$plottype == "Boxplot" && input$yvar!="") {
+      p <- p + geom_boxplot(aes_string(y=input$yvar, fill=input$facetvar))
+    } else if (input$plottype == "Barplot") {
+      p <- p + geom_bar(aes_string(fill=input$facetvar))
+    }
+    
+    p + theme_minimal() + labs(title="Customizable Plot", x=input$xvar, y=input$yvar)
+  })
+}
 
 shinyApp(ui = ui, server = server)

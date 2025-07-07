@@ -119,4 +119,64 @@ ggcorrplot(corr,
            method = "circle",
            insig = "blank",
            lab = TRUE,
-           title = "Correlation Matrix of Nutrition Values of Fruit")
+           title = "Correlation Matrix of Nutrition Values of Fruit",
+           type = "lower")
+
+## Barchart for calorie amounts
+
+data <- data |> 
+  mutate(calories = as.numeric(nutritions$calories)) |>
+  mutate(calorie_bin = cut(
+    nutritions$calories,
+    breaks = seq(0, 200, by = 20),
+    include.lowest = TRUE,
+    right = FALSE
+  )) 
+
+bin_counts <- data |> 
+  count(calorie_bin, name = "fruit_count")
+
+ggplot(bin_counts, aes(x = calorie_bin, y = fruit_count, fill = calorie_bin)) +
+  geom_bar(stat = "identity", color = "black") + 
+  theme_minimal() +
+  labs(title = "Fruits Grouped By Calorie Ranges",
+       x = "Calorie Ranges",
+       y = "Fruit Counts") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Shiny App---------------------------------------------------------------------
+
+ui <- navbarPage(
+  "Fruit Nutrition Explorer",
+  
+  tabPanel(
+    "About",
+    fluidPage("About This App"),
+    p("Welcome to the Fruit Nutrition Explorer!"),
+    p("This app allows you to explore the nutritional data on a plethora of fruits"),
+    p("This data comes from the Fruityvice API",
+      tags$a(href="https://www.fruityvice.com/", "Fruityvice Website"))
+  ),
+  
+  tabPanel(
+    "Data Download",
+    sidebarLayout(
+      sidebarPanel(
+        textInput("fruit_name", "Fruit Name (or leave blank for all):", value = ""),
+        actionButton("get_data", "Fetch Data"),
+        hr(),
+        uiOutput("columns_ui"),          # Dynamic UI for columns
+        uiOutput("rows_ui"),             # Dynamic UI for rows
+        downloadButton("download_data", "Download CSV")
+      ),
+      mainPanel(
+        DT::dataTableOutput("table")
+      )
+    )
+  ),
+    
+)
+
+server <- function(input, outpit, session){}
+
+shinyApp(ui = ui, server = server)

@@ -166,14 +166,12 @@ ui <- navbarPage(
       sidebarPanel(
         textInput("fruit_name", "Fruit Name (or leave blank for all):", value = ""),
         actionButton("get_data", "Fetch Data"),
-        hr(),
-        uiOutput("columns_ui"),
-        uiOutput("rows_ui"),
-        downloadButton("download_data", "Download CSV")
-      ),
+        uiOutput("columns_ui"),  # Columns selector
+        uiOutput("rows_ui"),     # Rows selector
+        downloadButton("download_data", "Download CSV")),
       mainPanel(
-        DT::dataTableOutput("table"),
-        p("Please make sure you fetch the data you will be using before proceding the Data Exploration tab")
+          DT::dataTableOutput("table"),
+          p("Please make sure you fetch the data you will be using before proceeding to the Data Exploration tab")
       )
     )
   ),
@@ -183,20 +181,19 @@ ui <- navbarPage(
     "Data Exploration",
     sidebarLayout(
       sidebarPanel(
-        selectInput("xvar", "X variable:", choices=NULL),    # dynamic
-        selectInput("yvar", "Y variable:", choices=NULL),    # dynamic
-        selectInput("facetvar", "Facet by:", choices=NULL),  # dynamic
+        selectInput("xvar", "X variable:", choices=NULL),
+        selectInput("yvar", "Y variable:", choices=NULL), 
+        selectInput("facetvar", "Facet by:", choices=NULL),
         radioButtons("plottype", "Plot Type:",
                      choices=c("Scatterplot", "Boxplot", "Barplot"))
       ),
       mainPanel(
-        plotOutput("plot"),
+        plotOutput("plot", height = "600px", width = "100%"),
         verbatimTextOutput("summary")
       )
     )
   )
 )
-
 
 server <- function(input, output, session){
   # Data from API
@@ -220,7 +217,19 @@ server <- function(input, output, session){
   })
   output$table <- DT::renderDataTable({
     req(fetched_data())
-    fetched_data()
+    df <- fetched_data()
+    
+    # Apply column selection
+    if (!is.null(input$columns) && length(input$columns) > 0) {
+      df <- df[, input$columns, drop = FALSE]
+    }
+    
+    # Apply row selection
+    if (!is.null(input$rows) && length(input$rows) == 2) {
+      df <- df[input$rows[1]:input$rows[2], , drop = FALSE]
+    }
+    
+    DT::datatable(df)
   })
   
   # Choosing columns and rows
@@ -235,13 +244,28 @@ server <- function(input, output, session){
   })
   
   # Download the subset data into a csv
-  downloadHandler(
-    filename=function() { paste0("fruit_data_", Sys.Date(), ".csv") },
-    content=function(file) {
-      df <- fetched_data()[input$rows[1]:input$rows[2], input$columns, drop=FALSE]
-      write.csv(df, file, row.names=FALSE)
+  output$download_data <- downloadHandler(
+    filename = function() {
+      paste0("fruit_data_", Sys.Date(), ".csv")
+    },
+    content = function(file) {
+      req(fetched_data())
+      df <- fetched_data()
+      
+      # Apply column selection
+      if (!is.null(input$columns) && length(input$columns) > 0) {
+        df <- df[, input$columns, drop = FALSE]
+      }
+      
+      # Apply row selection
+      if (!is.null(input$rows) && length(input$rows) == 2) {
+        df <- df[input$rows[1]:input$rows[2], , drop = FALSE]
+      }
+      
+      write.csv(df, file, row.names = FALSE)
     }
   )
+  
   
   # Choosing variables using a dropdown that will be observed only if new is chosen
   observe({
@@ -276,8 +300,10 @@ server <- function(input, output, session){
       p <- p + geom_bar(aes_string(fill=input$facetvar))
     }
     
-    p + theme_minimal() + labs(title="Customizable Plot", x=input$xvar, y=input$yvar)
+    p + theme_minimal() + theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 8), element_text(size=12, margin=margin(t=10)),axis.text.y = element_text(size=12, margin=margin(r=10))) +
+      labs(title="Customizable Plot", x=input$xvar, y=input$yvar)
   })
 }
 
 shinyApp(ui = ui, server = server)
+
